@@ -107,7 +107,7 @@ class MABAgent():
         '''
         _hat_theta = []
     
-    # fill a list with expected returns of each arm (= theta because Bernoulli)
+    # fill a list with expected returns of each arm (= alpha / alpha + beta)
         for k in range(self.n_arms):
             _alpha, _beta = theta_params['theta'+str(k), 'prior']
             _hat_theta.append(_alpha / (_alpha + _beta))
@@ -160,7 +160,6 @@ class MABSimulation():
         self.agent = ClassAgent
         self.x_grid = x_grid
         self.fig = plt.figure()
-        self.initial_state = ClassEnvironment.__dict__['_theta_params']
     
     def reset(self):
         '''Reset the initial state'''
@@ -347,7 +346,7 @@ class MABSimulation():
 # Example
 ###############################################################################        
               
-if __name__ = '__main__':
+if __name__ == '__main__':
     
     #instanciate a Bernoulli-Beta environment
     env = MABEnvironment(
