@@ -7,7 +7,6 @@ Created on Fri Mar 19 22:35:09 2021
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import seaborn as sns
 import random
 from scipy.stats import beta
 
@@ -87,7 +86,9 @@ class MABEnvironment():
 class MABAgent():
     
     def __init__(self, n_arms):
+        
         self.n_arms = n_arms
+        self.strategies = ['greedy','thomson', 'eps_dithering']
         
     def greedy_strategy(self, theta_params):
         '''
@@ -121,7 +122,35 @@ class MABAgent():
             _action = np.argmax(_hat_theta)
             
         return _action
+    
+    def eps_dithering_strategy(self, theta_params, epsilon = .1):
+        '''
+        Applies epsilon-dithering strategy
 
+        Parameters
+        ----------
+        theta_params: DICT
+        A dictionary of the form: {'theta1, value':..., 'theta1, prior':[alpha_1, beta_1], 'theta2':...}
+        (Expects the _theta_params attribute of MABEnvironment)
+        
+        epsilon: FLOAT
+        A tuning parameter between 0 and 1 giving the probability of applying random action
+        Returns
+        -------
+        _action: the action picked following the epsilon dithering strategy
+        '''
+        
+        assert (epsilon > 0) and (epsilon < 1), "pick epsilon in ]0,1["
+        
+        # create a dummy variable which is equal to 1 with probability epsilon. In this case, 
+        # applies random search
+        _random = np.random.binomial(n = 1, p = epsilon)
+        
+        _action = ((1 - _random) * self.greedy_strategy(theta_params)) +  (_random * (np.random.randint(low = 0, high = self.n_arms)))
+        
+        return _action
+    
+    
     def thomson_strategy(self, theta_params):
         '''
         Applies Thomson sampling
@@ -174,7 +203,7 @@ class MABSimulation():
         Parameters
         ----------
         strategy : STR, optional
-            Either "thomson" or "greedy". None leads to an AssertError.
+            Either "thomson" "eps_dithering" or "greedy". None leads to an AssertError.
 
         Returns
         -------
@@ -188,13 +217,16 @@ class MABSimulation():
             _action = self.agent.greedy_strategy(_state)
         elif strategy == "thomson":
             _action = self.agent.thomson_strategy(_state)
+        elif strategy == 'eps_dithering':
+            _action = self.agent.eps_dithering_strategy(_state)
+            
         # derive a reward
         _reward = self.env.get_reward(_action)
         # update the state
         self.env.update_prior(_reward)
         
     
-    def plot_priors(self, strategy = None):
+    def plot_priors(self, strategy = None, n_stop = 100):
         '''
         Creates an animation of the distributions over rewards throughout the
         simulation. 
@@ -202,14 +234,16 @@ class MABSimulation():
         Parameters
         ----------
         strategy : STR, optional
-            Either "thomson" or "greedy". None leads to an AssertError.
-
+            Either "thomson" "eps_dithering" or "greedy". None leads to an AssertError.
+        n_stop : INT, optional
+            number of frames for the animation (set n_stop << T if T is very high, since
+            the game reaches an equilibrium quite swiftly for every strategy)
         Returns
         -------
         An animation
 
         '''
-        assert strategy is not None, "Choose either 'thomson' or 'greedy' for strategy"
+        assert strategy in self.agent.strategies, "Choose either 'thomson', 'eps-dithering' or 'greedy' for strategy"
         
         # initiate axis and curves
         ax = plt.axes(xlim = (0,1), ylim = (0,15))
@@ -235,10 +269,10 @@ class MABSimulation():
         # creates and returns the animation
         _anim = animation.FuncAnimation(self.fig, _animate,
                                         init_func = _init,
-                                        frames = self.T)
+                                        frames = n_stop)
         return _anim    
     
-    def average_regret(self, n_exp = 100, strategy = None):
+    def average_regret(self, n_exp = 100, strategy = None, resolution = 20):
         '''
         Computes the per-period regret at time t for n_exp experiences:
             Regret_t = max_{k} theta_k - theta_{x_t}
@@ -251,18 +285,23 @@ class MABSimulation():
             Number of experiences over which the regret is averaged at each
             time t.
         strategy : STR, optional
-            Either 'thomson' or 'greedy'
+            Either "thomson" "eps_dithering" or "greedy". None leads to an AssertError.
+        resolution: INT, optional 
+            number of steps between two records of the regret
         Returns
         -------
         _mean_regret : A T-long sequence containing the average per period
         regret at each step.
 
         '''
-        assert strategy is not None, "Choose either 'thomson' or 'greedy' for strategy"
-
-        # create a (n_exp x T) array containing the oracle reward
+        assert strategy in self.agent.strategies, "Choose either 'thomson', 'eps-dithering' or 'greedy' for strategy"
+        
+        assert self.T % resolution == 0, "choose a number of steps which is a multiple of *resolution* "
+        
+        # create a (n_exp x _n_records) array containing the oracle reward
+        _n_records = int(self.T / resolution)
         _oracle = np.max([self.env._theta_params['theta'+str(k) , 'theta'] for k in range(self.env.n)])
-        _array_oracle = np.full(shape = (n_exp, self.T), fill_value = _oracle)
+        _array_oracle = np.full(shape = (n_exp, _n_records), fill_value = _oracle)
         
         # create a (n_exp x T) array to be filled with the average rewards      
         _array_reward = np.zeros_like(_array_oracle)
@@ -278,7 +317,13 @@ class MABSimulation():
                     _a = self.agent.greedy_strategy(_s)
                 elif strategy == 'thomson':
                     _a = self.agent.thomson_strategy(_s)
-                _row.append(self.env._theta_params['theta' + str(_a) , 'theta'])
+                elif strategy == 'eps_dithering':
+                    _a = self.agent.eps_dithering_strategy(_s)
+                
+                #record the regret with resolution:
+                if t % resolution == 0:
+                    _row.append(self.env._theta_params['theta' + str(_a) , 'theta'])
+                    
                 _r = self.env.get_reward(_a)
                 self.env.update_prior(_r)
    
@@ -293,7 +338,7 @@ class MABSimulation():
         
         return _mean_regret
     
-    def plot_regret(self, regret_thomson, regret_greedy):
+    def plot_regret(self, regret_thomson, regret_eps_dithering, regret_greedy):
         '''
         Produces an animation of the average regret for both Thomson and greedy
         strategies over time
@@ -303,8 +348,11 @@ class MABSimulation():
         regret_thomson : 
             A flat array containing the average regrets for Thomson.
             Expect an average_regret() output
+        regret_eps_dithering :
+            A flat array containing the average regrets for dithering.
+            Expect an average_regret() output
         regret_greedy :
-            A flat array containing the average regrets for Thomson.
+            A flat array containing the average regrets for greedy.
             Expect an average_regret() output
 
         Returns
@@ -312,11 +360,12 @@ class MABSimulation():
         An animation of the regret
 
         '''
-        _strategies = {'greedy': regret_greedy, 'thomson': regret_thomson}
+        _strategies = {'greedy': regret_greedy, 'eps_dithering': regret_eps_dithering, 'thomson': regret_thomson}
         
         # initiate axis and curves
-        ax = plt.axes(xlim = (0,self.T), ylim = (0,.4))
-        lines = [plt.plot([], [], label = '{}'.format(stj))[0] for stj in ['greedy','thomson']]
+        _length_seq = regret_greedy.shape[0]
+        ax = plt.axes(xlim = (0,_length_seq), ylim = (0,.3))
+        lines = [plt.plot([], [], label = '{}'.format(stj))[0] for stj in self.agent.strategies]
         ax.legend()
         plt.suptitle('Average per-period regret')
         plt.title('{} steps'.format(self.T))
@@ -327,9 +376,9 @@ class MABSimulation():
                 line.set_data([], []) 
             return lines
         
-        # inner function for the update step of the FunctionAnimaiton method
+        # inner function for the update step of the FunctionAnimation method
         def _animate_regret(i):
-            for stj, line in zip(['greedy', 'thomson'], lines):
+            for stj, line in zip(self.agent.strategies, lines):
                 x_grid = np.arange(i)
                 y_grid = _strategies[stj][:i]
                 line.set_data(x_grid, y_grid)
@@ -337,7 +386,7 @@ class MABSimulation():
         # creates and returns the animation
         _anim = animation.FuncAnimation(self.fig, _animate_regret,
                                         init_func = _init_regret,
-                                        frames = self.T)
+                                        frames = _length_seq)
         return _anim    
         
               
@@ -359,7 +408,7 @@ if __name__ == '__main__':
     agent = MABAgent(n_arms = 4)
     
     # instanciate a simulation
-    simul = MABSimulation(env, agent, T = 200)
+    simul = MABSimulation(env, agent, T = 2000)
     
     
     # show animation of distributions updates with Thomson sampling
@@ -373,6 +422,10 @@ if __name__ == '__main__':
     # show animation of distributions updates with a greedy strategy
     anim_greedy = simul.plot_priors("greedy") 
     simul.reset()
+    
+    # show animation of distributoins with an eps-dithering strategy
+    anim_dithering = simul.plot_priors("eps_dithering") 
+    simul.reset()
 
     
     
@@ -381,10 +434,12 @@ if __name__ == '__main__':
     simul.reset()
     greedy_regret = simul.average_regret(n_exp = 200, strategy = "greedy")
     simul.reset()
+    dithering_regret = simul.average_regret(n_exp = 200, strategy = "eps_dithering")
+    simul.reset()
     
-    anim_regret = simul.plot_regret(thomson_regret, greedy_regret)
-    #writergif = animation.PillowWriter(fps=30) 
-    #anim_regret.save('anim_regret.gif', writer = writergif)
+    anim_regret = simul.plot_regret(thomson_regret, dithering_regret, greedy_regret)
+    #writergif = animation.PillowWriter(fps=25) 
+    #anim_regret.save('anim_regret2.gif', writer = writergif)
 
 
         
