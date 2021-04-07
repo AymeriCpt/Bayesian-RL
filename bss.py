@@ -1,7 +1,9 @@
-from collections import namedtuple
+import datetime
+import pickle
 import random
+import os
+import time
 
-import gym
 import numpy as np
 
 
@@ -94,24 +96,28 @@ def thompson_sample(hyperstate, info):
     return best_action
 
 
-def max_expected_reward(hyperstate, info):
+def expected_reward(hyperstate, action, info):
     alphas, state, _ = hyperstate
 
+    # sample from mean model
+    start = _get_index(state, action, 0, info)
+    relevant_alphas = alphas[start:start + info['n_states']]
+    transition_probas = relevant_alphas / np.sum(relevant_alphas)
+
+    # compute mean reward
+    mean_rew = 0
+    for next_state in range(info['n_states']):
+        mean_rew += transition_probas[next_state] * info['reward_fn'](state, action, next_state)
+
+    return mean_rew
+
+
+def max_expected_reward(hyperstate, info):
     max_rew, best_action = float('-inf'), None
     for action in range(info['n_actions']):
-        start = _get_index(state, action, 0, info)
-        relevant_alphas = alphas[start:start + info['n_states']]
-        transition_probas = relevant_alphas / np.sum(relevant_alphas) # take mean instead of sampling
-
-        # compute mean reward
-        mean_rew = 0
-        for next_state in range(info['n_states']):
-            mean_rew += transition_probas[next_state] * info['reward_fn'](state, action, next_state)
-
-        # keep track of best q value
+        mean_rew = expected_reward(hyperstate, action, info)
         if  mean_rew > max_rew:
             max_rew, best_action = mean_rew, action
-    
     return max_rew, best_action
 
 
@@ -127,9 +133,17 @@ def eval_tree(root, horizon, info):
         return immed * (horizon - root.depth), best_action
 
     if root.type == 'decision':
+        # here we make sure to consider every action
+        missing = set(range(info['n_actions']))
         best_q_value, best_action = float('-inf'), None
         for action, node in root.children.items():
             q_value, _ = eval_tree(node, horizon, info)
+            if action in missing:
+                missing.remove(action)
+            if q_value > best_q_value:
+                best_q_value, best_action = q_value, action
+        for action in missing:
+            q_value = expected_reward(hyperstate, action, info)
             if q_value > best_q_value:
                 best_q_value, best_action = q_value, action
         return best_q_value, best_action
@@ -231,7 +245,10 @@ if __name__ == "__main__":
         help='Probability to create a new random branch on an outcome node.')
     parser.add_argument('--horizon', '-h', type=int, default=5,
         help='Maximum planning depth.')
+    parser.add_argument('--verbose-freq', '-v', type=int, default=50)
     args = parser.parse_args()
+
+    name = 'bss_h{}_{:%Y.%m.%d-%H.%M.%S}'.format(args.horizon, datetime.datetime.now())
 
     env = gym.make('NChain-v0')
     info = get_info(env)
@@ -240,14 +257,32 @@ if __name__ == "__main__":
 
     agent = BSSAgent(args.budget, args.branch_proba, args.horizon, info)
 
-    rsum, t = 0, 0
+    rews, rsum, t = [], 0, 0
     state, done = env.reset(), False
     hyperstate = init_hyperstate(state, info)
+    start_time = time.time()
     while not done:
         action, _ = agent.act(hyperstate)
         next_state, rew, done, _ =  env.step(action)
         hyperstate = update_posterior(hyperstate, action, next_state, info)
+
+        rews.append(rew)
         rsum += rew
         t += 1
-    print(rsum, t, rsum / t)
 
+        if t % args.verbose_freq == 0:
+            print('step {}:\n'
+                  '  cumulative reward = {}\n'
+                  '  elapsed time = {:.2f} s'.format(t, rsum, time.time() - start_time))
+
+    logs = {
+        'rewards': rews,
+        'cumulative_reward': rsum,
+        'timesteps': t,
+        'elapsed_time': time.time() - start_time,
+        'configs': args,
+    }
+
+    os.makedirs('./logs/', exist_ok=True)
+    with open('./logs/{}.pkl'.format(name), 'wb') as f:
+        pickle.dump(logs, f)

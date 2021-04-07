@@ -1,10 +1,10 @@
 from collections import defaultdict
+import datetime
+import os
+import pickle
+import time
 
-import gym
 import numpy as np
-
-
-ENV = 'NChain-v0'
 
 
 def encode_hyperstate(hyperstate):
@@ -200,11 +200,14 @@ if __name__ == "__main__":
         help='Maximum planning depth.')
     parser.add_argument('--n-trajectories', '-t', type=int, default=10,
         help='Number of trajectories considered per FSSS.')
-    parser.add_argument('--branching-factor', '-b', type=int, default=30,
+    parser.add_argument('--branching-factor', '-b', type=int, default=20,
         help='Number of branches created per decision when using BFS3/FSSS.')
     parser.add_argument('--gamma', type=float, default=0.99,
         help='Discount factor.')
+    parser.add_argument('--verbose-freq', '-v', type=int, default=50)
     args = parser.parse_args()
+
+    name = 'bss_h{}_{:%Y.%m.%d-%H.%M.%S}'.format(args.max_depth, datetime.datetime.now())
 
     env = gym.make('NChain-v0')
     info = get_info(env, args)
@@ -213,14 +216,32 @@ if __name__ == "__main__":
 
     agent = BFS3Agent(args.max_depth, args.n_trajectories, args.branching_factor, info)
 
-    rsum, t = 0, 0
+    rews, rsum, t = [], 0, 0
     state, done = env.reset(), False
     hyperstate = init_hyperstate(state, info)
+    start_time = time.time()
     while not done:
         action = agent.act(hyperstate)
         next_state, rew, done, _ =  env.step(action)
         hyperstate = update_posterior(hyperstate, action, next_state, info)
-        print(rew)
+
+        rews.append(rew)
         rsum += rew
         t += 1
-    print(rsum, t, rsum / t)
+
+        if t % args.verbose_freq == 0:
+            print('step {}:\n'
+                  '  cumulative reward = {}\n'
+                  '  elapsed time = {:.2f} s'.format(t, rsum, time.time() - start_time))
+
+    logs = {
+        'rewards': rews,
+        'cumulative_reward': rsum,
+        'timesteps': t,
+        'elapsed_time': time.time() - start_time,
+        'configs': args,
+    }
+
+    os.makedirs('./logs/', exist_ok=True)
+    with open('./logs/{}.pkl'.format(name), 'wb') as f:
+        pickle.dump(logs, f)
