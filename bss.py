@@ -239,11 +239,11 @@ if __name__ == "__main__":
     import gym
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--budget', '-b', type=int, default=200,
+    parser.add_argument('--budget', '-b', type=int, default=500,
         help='Number of nodes to explore per planning step.')
-    parser.add_argument('--branch-proba', '-bp', type=float, default=0.0,
+    parser.add_argument('--branch-proba', '-bp', type=float, default=0.05,
         help='Probability to create a new random branch on an outcome node.')
-    parser.add_argument('--horizon', '-h', type=int, default=5,
+    parser.add_argument('--horizon', '-hz', type=int, default=5,
         help='Maximum planning depth.')
     parser.add_argument('--verbose-freq', '-v', type=int, default=50)
     args = parser.parse_args()

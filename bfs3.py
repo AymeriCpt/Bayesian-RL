@@ -207,7 +207,7 @@ if __name__ == "__main__":
     parser.add_argument('--verbose-freq', '-v', type=int, default=50)
     args = parser.parse_args()
 
-    name = 'bss_h{}_{:%Y.%m.%d-%H.%M.%S}'.format(args.max_depth, datetime.datetime.now())
+    name = 'bfs3_h{}_{:%Y.%m.%d-%H.%M.%S}'.format(args.max_depth, datetime.datetime.now())
 
     env = gym.make('NChain-v0')
     info = get_info(env, args)
