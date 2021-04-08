@@ -257,16 +257,17 @@ if __name__ == "__main__":
 
     agent = BSSAgent(args.budget, args.branch_proba, args.horizon, info)
 
-    rews, rsum, t = [], 0, 0
+    rews, acts, rsum, t = [], [], 0, 0
     state, done = env.reset(), False
     hyperstate = init_hyperstate(state, info)
     start_time = time.time()
     while not done:
-        action, _ = agent.act(hyperstate)
-        next_state, rew, done, _ =  env.step(action)
-        hyperstate = update_posterior(hyperstate, action, next_state, info)
+        act, _ = agent.act(hyperstate)
+        next_state, rew, done, _ =  env.step(act)
+        hyperstate = update_posterior(hyperstate, act, next_state, info)
 
         rews.append(rew)
+        acts.append(act)
         rsum += rew
         t += 1
 
@@ -277,6 +278,7 @@ if __name__ == "__main__":
 
     logs = {
         'rewards': rews,
+        'actions': acts,
         'cumulative_reward': rsum,
         'timesteps': t,
         'elapsed_time': time.time() - start_time,

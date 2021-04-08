@@ -147,8 +147,8 @@ def fsss(hyperstate, max_depth, n_trajectories, branching_factor, params, info):
 
 
 def bfs3(hyperstate, max_depth, n_trajectories, branching_factor, params, info):
-    if hyperstate in params['policy']:
-        return params['policy'][hyperstate], params
+    #if hyperstate in params['policy']:
+    #    return params['policy'][hyperstate], params
 
     q_values = np.zeros(info['n_actions'], dtype=np.float32)
     for action in range(info['n_actions']):
@@ -216,16 +216,17 @@ if __name__ == "__main__":
 
     agent = BFS3Agent(args.max_depth, args.n_trajectories, args.branching_factor, info)
 
-    rews, rsum, t = [], 0, 0
+    rews, acts, rsum, t = [], [], 0, 0
     state, done = env.reset(), False
     hyperstate = init_hyperstate(state, info)
     start_time = time.time()
     while not done:
-        action = agent.act(hyperstate)
-        next_state, rew, done, _ =  env.step(action)
-        hyperstate = update_posterior(hyperstate, action, next_state, info)
+        act = agent.act(hyperstate)
+        next_state, rew, done, _ =  env.step(act)
+        hyperstate = update_posterior(hyperstate, act, next_state, info)
 
         rews.append(rew)
+        acts.append(act)
         rsum += rew
         t += 1
 
@@ -236,6 +237,7 @@ if __name__ == "__main__":
 
     logs = {
         'rewards': rews,
+        'actions': acts,
         'cumulative_reward': rsum,
         'timesteps': t,
         'elapsed_time': time.time() - start_time,
